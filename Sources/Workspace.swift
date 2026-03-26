@@ -7146,36 +7146,34 @@ final class Workspace: Identifiable, ObservableObject {
 
     private func resolvedTerminalInheritanceFontPoints(
         for terminalPanel: TerminalPanel,
-        sourceSurface: ghostty_surface_t,
         inheritedConfig: ghostty_surface_config_s
     ) -> Float? {
-        let runtimePoints = cmuxCurrentSurfaceFontSizePoints(sourceSurface)
         if let rooted = terminalInheritanceFontPointsByPanelId[terminalPanel.id], rooted > 0 {
-            if let runtimePoints, abs(runtimePoints - rooted) > 0.05 {
-                // Runtime zoom changed after lineage was seeded (manual zoom on descendant);
-                // treat runtime as the new root for future descendants.
-                return runtimePoints
-            }
             return rooted
         }
         if inheritedConfig.font_size > 0 {
             return inheritedConfig.font_size
         }
-        return runtimePoints
+        return nil
     }
 
-    private func rememberTerminalConfigInheritanceSource(_ terminalPanel: TerminalPanel) {
+    private func rememberTerminalConfigInheritanceSource(
+        _ terminalPanel: TerminalPanel,
+        inheritedConfig: ghostty_surface_config_s? = nil
+    ) {
         lastTerminalConfigInheritancePanelId = terminalPanel.id
-        if terminalPanel.surface.hasLiveSurface,
-           let sourceSurface = terminalPanel.surface.surface,
-           let runtimePoints = cmuxCurrentSurfaceFontSizePoints(sourceSurface) {
-            let existing = terminalInheritanceFontPointsByPanelId[terminalPanel.id]
-            if existing == nil || abs((existing ?? runtimePoints) - runtimePoints) > 0.05 {
-                terminalInheritanceFontPointsByPanelId[terminalPanel.id] = runtimePoints
-            }
-            lastTerminalConfigInheritanceFontPoints =
-                terminalInheritanceFontPointsByPanelId[terminalPanel.id] ?? runtimePoints
+
+        let rememberedFontPoints: Float?
+        if let existing = terminalInheritanceFontPointsByPanelId[terminalPanel.id], existing > 0 {
+            rememberedFontPoints = existing
+        } else if let inheritedConfig, inheritedConfig.font_size > 0 {
+            terminalInheritanceFontPointsByPanelId[terminalPanel.id] = inheritedConfig.font_size
+            rememberedFontPoints = inheritedConfig.font_size
+        } else {
+            rememberedFontPoints = nil
         }
+
+        lastTerminalConfigInheritanceFontPoints = rememberedFontPoints
     }
 
     func lastRememberedTerminalPanelForConfigInheritance() -> TerminalPanel? {
@@ -7273,16 +7271,12 @@ final class Workspace: Identifiable, ObservableObject {
             )
             if let rootedFontPoints = resolvedTerminalInheritanceFontPoints(
                 for: terminalPanel,
-                sourceSurface: sourceSurface,
                 inheritedConfig: config
             ), rootedFontPoints > 0 {
                 config.font_size = rootedFontPoints
                 terminalInheritanceFontPointsByPanelId[terminalPanel.id] = rootedFontPoints
             }
-            rememberTerminalConfigInheritanceSource(terminalPanel)
-            if config.font_size > 0 {
-                lastTerminalConfigInheritanceFontPoints = config.font_size
-            }
+            rememberTerminalConfigInheritanceSource(terminalPanel, inheritedConfig: config)
             return config
         }
 
